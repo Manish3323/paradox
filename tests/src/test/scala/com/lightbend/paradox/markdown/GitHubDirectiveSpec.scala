@@ -77,6 +77,24 @@ class GitHubDirectiveSpec extends MarkdownBaseSpec {
       html("""<p><a href="https://github.com/lightbend/paradox/tree/master/build.sbt">See build.sbt</a></p>""")
   }
 
+  it should "handle blob links" in {
+    val context = writerContextWithProperties(
+      "github.base_url" -> "https://github.com/lightbend/paradox/blob/master",
+      "github.root.base_dir" -> ".")
+
+    markdown("@github[See build.sbt](/build.sbt)")(context) shouldEqual
+      html("""<p><a href="https://github.com/lightbend/paradox/blob/master/build.sbt">See build.sbt</a></p>""")
+  }
+
+  it should "handle blob links with automatic versioning" in {
+    val context = writerContextWithProperties(
+      "github.base_url" -> "https://github.com/lightbend/paradox/blob/0.2.0",
+      "github.root.base_dir" -> ".")
+
+    markdown("@github[See build.sbt](/build.sbt)")(context) shouldEqual
+      html("""<p><a href="https://github.com/lightbend/paradox/blob/0.2.0/build.sbt">See build.sbt</a></p>""")
+  }
+
   it should "throw exceptions for unconfigured GitHub URL" in {
     the[ParadoxException] thrownBy {
       markdown("@github[#1](#1)")(writerContext)

@@ -17,9 +17,9 @@
 package com.lightbend.paradox.markdown
 
 import com.lightbend.paradox.tree.Tree.{ Forest, Location }
+
 import java.io.{ File, FileNotFoundException }
 import java.util.Optional
-
 import com.lightbend.paradox.markdown.Snippet.SnippetException
 import org.pegdown.ast._
 import org.pegdown.ast.DirectiveNode.Format._
@@ -27,6 +27,7 @@ import org.pegdown.plugins.ToHtmlSerializerPlugin
 import org.pegdown.{ Printer, ToHtmlSerializer }
 
 import scala.collection.JavaConverters._
+import scala.util.matching.Regex
 
 /**
  * Serialize directives, checking the name and format against registered directives.
@@ -60,7 +61,12 @@ abstract class Directive {
 }
 
 object Directive {
-  def filterLabels(prefix: String, attributes: DirectiveAttributes, labels: Seq[String], properties: Map[String, String]): Boolean = attributes.value("filterLabels", "") match {
+  def filterLabels(
+    prefix:     String,
+    attributes: DirectiveAttributes,
+    labels:     Seq[String],
+    properties: Map[String, String]
+  ): Boolean = attributes.value("filterLabels", "") match {
     case "true" | "on" | "yes"  => true
     case "false" | "off" | "no" => false
     case ""                     => labels.nonEmpty && properties.get(s"$prefix.filterLabels").forall(_ == "true")
@@ -112,11 +118,14 @@ trait SourceDirective {
         ""
       }
 
-    Writer.substituteVarsInString(node.source match {
-      case x: DirectiveNode.Source.Direct => x.value
-      case x: DirectiveNode.Source.Ref    => ref(x.value)
-      case DirectiveNode.Source.Empty     => ref(node.label)
-    }, variables)
+    Writer.substituteVarsInString(
+      node.source match {
+        case x: DirectiveNode.Source.Direct => x.value
+        case x: DirectiveNode.Source.Ref    => ref(x.value)
+        case DirectiveNode.Source.Empty     => ref(node.label)
+      },
+      variables
+    )
   }
 
   protected def resolveFile(propPrefix: String, source: String, page: Page, variables: Map[String, String]): File =
@@ -158,8 +167,7 @@ object SourceDirective {
  * Refs are for links to internal pages. The file extension is replaced when rendering.
  * Links are validated to ensure they point to a known page.
  */
-case class RefDirective(ctx: Writer.Context)
-  extends InlineDirective("ref", "ref:") with SourceDirective {
+case class RefDirective(ctx: Writer.Context) extends InlineDirective("ref", "ref:") with SourceDirective {
 
   def render(node: DirectiveNode, visitor: Visitor, printer: Printer): Unit = {
     val source = resolvedSource(node, page)
@@ -193,8 +201,7 @@ object RefDirective {
 
 }
 
-case class LinkDirective(ctx: Writer.Context)
-  extends InlineDirective("link", "link:") with SourceDirective {
+case class LinkDirective(ctx: Writer.Context) extends InlineDirective("link", "link:") with SourceDirective {
 
   def render(node: DirectiveNode, visitor: Visitor, printer: Printer): Unit =
     new ExpLinkNodeExtended(node.label, resolvedSource(node, page), node.contentsNode, node.attributes).accept(visitor)
@@ -210,8 +217,7 @@ object LinkDirective {
 /**
  * Link to external sites using URI templates.
  */
-abstract class ExternalLinkDirective(names: String*)
-  extends InlineDirective(names: _*) with SourceDirective {
+abstract class ExternalLinkDirective(names: String*) extends InlineDirective(names: _*) with SourceDirective {
 
   protected def resolveLink(node: DirectiveNode, location: String): Url
 
@@ -247,8 +253,7 @@ abstract class ExternalLinkDirective(names: String*)
  *
  * Link to external pages using URL templates.
  */
-case class ExtRefDirective(ctx: Writer.Context)
-  extends ExternalLinkDirective("extref", "extref:") {
+case class ExtRefDirective(ctx: Writer.Context) extends ExternalLinkDirective("extref", "extref:") {
 
   def resolveLink(node: DirectiveNode, link: String): Url = {
     link.split(":", 2) match {
@@ -271,15 +276,15 @@ case class ExtRefDirective(ctx: Writer.Context)
  *
  * Then `@scaladoc[Http](akka.http.scaladsl.Http)` will match the latter.
  */
-abstract class ApiDocDirective(name: String)
-  extends ExternalLinkDirective(name, name + ":") {
+abstract class ApiDocDirective(name: String) extends ExternalLinkDirective(name, name + ":") {
 
   protected def resolveApiLink(link: String): Url
 
   val defaultBaseUrl = PropertyUrl(name + ".base_url", variables.get)
   val ApiDocProperty = raw"""$name\.(.*)\.base_url""".r
   val baseUrls = variables.collect {
-    case (property @ ApiDocProperty(pkg), url) => (pkg, PropertyUrl(property, variables.get))
+    case (property @ ApiDocProperty(pkg), url) =>
+      (pkg, PropertyUrl(property, variables.get))
   }
 
   override protected def linkContents(node: DirectiveNode): Node = new CodeNode(node.contents)
@@ -311,12 +316,12 @@ abstract class ApiDocDirective(name: String)
 }
 
 object ApiDocDirective {
+
   /** This relies on the naming convention of packages being all-ascii-lowercase (which is rarely broken), numbers and underscore. */
   def packageDotsToSlash(s: String) = s.replaceAll("(\\b[a-z][a-z0-9_]*)\\.", "$1/")
 }
 
-case class ScaladocDirective(ctx: Writer.Context)
-  extends ApiDocDirective("scaladoc") {
+case class ScaladocDirective(ctx: Writer.Context) extends ApiDocDirective("scaladoc") {
 
   protected def resolveApiLink(link: String): Url = {
     val levels = link.split("[.]")
@@ -344,7 +349,8 @@ object JavadocDirective {
   // If Java 9+ we default to linking directly to the file, since it doesn't support frames, otherwise we default
   // to linking to the frames version with the class in the query parameter. Also, the version of everything up to
   // and including 8 starts with 1., so that's an easy way to tell if it's 9+ or not.
-  val jdkDependentLinkStyle = if (sys.props.get("java.specification.version").exists(_.startsWith("1."))) LinkStyleFrames else LinkStyleDirect
+  val jdkDependentLinkStyle =
+    if (sys.props.get("java.specification.version").exists(_.startsWith("1."))) LinkStyleFrames else LinkStyleDirect
 
   final val JavadocLinkStyleProperty = raw"""javadoc\.(.*).link_style""".r
 
@@ -359,8 +365,7 @@ object JavadocDirective {
 
 }
 
-case class JavadocDirective(ctx: Writer.Context)
-  extends ApiDocDirective("javadoc") {
+case class JavadocDirective(ctx: Writer.Context) extends ApiDocDirective("javadoc") {
 
   import JavadocDirective._
 
@@ -395,6 +400,7 @@ trait GitHubResolver {
   val IssuesLink = """([^/]+/[^/]+)?#([0-9]+)""".r
   val CommitLink = """(([^/]+/[^/]+)?@)?(\p{XDigit}{5,40})""".r
   lazy val TreeUrl = (s"(.*$githubDomain/[^/]+/[^/]+/tree/[^/]+)").r
+  lazy val BlobUrl = (s"(.*$githubDomain/[^/]+/[^/]+/blob/[^/]+)").r
   lazy val ProjectUrl = (s"(.*$githubDomain/[^/]+/[^/]+).*").r
 
   val baseUrl = PropertyUrl(GitHubResolver.baseUrl, variables.get)
@@ -440,9 +446,12 @@ trait GitHubResolver {
   }
 
   protected def treeUrl = baseUrl.collect {
-    case TreeUrl(url)    => url
-    case ProjectUrl(url) => url + "/tree/master"
-    case _               => throw Url.Error(s"[${GitHubResolver.baseUrl}] is not a project or versioned tree URL")
+    case TreeUrl(url)                                              => url
+    case BlobUrl(url)                                              => url
+    case ProjectUrl(url) if TreeUrl.pattern.matcher(url).matches() => url + "/tree/master"
+    case ProjectUrl(url) if BlobUrl.pattern.matcher(url).matches() => url + "/blob/master"
+    case ProjectUrl(url)                                           => url + "/tree/master"
+    case _                                                         => throw Url.Error(s"[${GitHubResolver.baseUrl}] is not a project or versioned tree URL")
   }
 
 }
@@ -454,8 +463,7 @@ trait GitHubResolver {
  * Supports most of the references documented in:
  * https://help.github.com/articles/autolinked-references-and-urls/
  */
-case class GitHubDirective(ctx: Writer.Context)
-  extends ExternalLinkDirective("github", "github:") with GitHubResolver {
+case class GitHubDirective(ctx: Writer.Context) extends ExternalLinkDirective("github", "github:") with GitHubResolver {
 
   def resolveLink(node: DirectiveNode, link: String): Url = {
     link match {
@@ -472,8 +480,7 @@ case class GitHubDirective(ctx: Writer.Context)
  *
  * Extracts snippets from source files into verbatim blocks.
  */
-case class SnipDirective(ctx: Writer.Context)
-  extends LeafBlockDirective("snip") with SourceDirective with GitHubResolver {
+case class SnipDirective(ctx: Writer.Context) extends LeafBlockDirective("snip") with SourceDirective with GitHubResolver {
 
   def render(node: DirectiveNode, visitor: Visitor, printer: Printer): Unit = {
     try {
@@ -484,9 +491,12 @@ case class SnipDirective(ctx: Writer.Context)
       val (text, snippetLang) = Snippet(file, labels.toSeq, filterLabels)
       val lang = Option(node.attributes.value("type")).getOrElse(snippetLang)
       val group = Option(node.attributes.value("group")).getOrElse("")
-      val sourceUrl = if (variables.contains(GitHubResolver.baseUrl) && variables.getOrElse(SnipDirective.showGithubLinks, "false") == "true") {
-        Optional.of(resolvePath(page, Path.toUnixStyleRootPath(file.getAbsolutePath), labels.headOption).base.normalize.toString)
-      } else Optional.empty[String]()
+      val sourceUrl =
+        if (variables.contains(GitHubResolver.baseUrl) && variables.getOrElse(SnipDirective.showGithubLinks, "false") == "true") {
+          Optional.of(
+            resolvePath(page, Path.toUnixStyleRootPath(file.getAbsolutePath), labels.headOption).base.normalize.toString
+          )
+        } else Optional.empty[String]()
       new VerbatimGroupNode(text, lang, group, node.attributes.classes, sourceUrl).accept(visitor)
     } catch {
       case e: FileNotFoundException =>
@@ -512,8 +522,7 @@ object SnipDirective {
  *
  * Extracts fiddles from source files into fiddle blocks.
  */
-case class FiddleDirective(ctx: Writer.Context)
-  extends LeafBlockDirective("fiddle") with SourceDirective {
+case class FiddleDirective(ctx: Writer.Context) extends LeafBlockDirective("fiddle") with SourceDirective {
 
   def render(node: DirectiveNode, visitor: Visitor, printer: Printer): Unit = {
     try {
@@ -527,12 +536,18 @@ case class FiddleDirective(ctx: Writer.Context)
       // 'selector' is excluded on purpose to not complicate logic and increase maintainability
       val validParams = Seq("prefix", "dependency", "scalaversion", "template", "theme", "minheight", "layout")
 
-      val params = validParams.map(k => Option(node.attributes.value(k)).map { x =>
-        if (x.startsWith("'") && x.endsWith("'")) // earlier explicit ' was required to quote attributes (now all are quoted with ")
-          s"""data-$k="${x.substring(1, x.length - 1)}" """
-        else
-          s"""data-$k="$x" """
-      }.getOrElse("")).mkString(" ")
+      val params = validParams
+        .map(k =>
+          Option(node.attributes.value(k))
+            .map { x =>
+              if (x.startsWith("'") && x.endsWith("'")) // earlier explicit ' was required to quote attributes (now all are quoted with ")
+                s"""data-$k="${x.substring(1, x.length - 1)}" """
+              else
+                s"""data-$k="$x" """
+            }
+            .getOrElse("")
+        )
+        .mkString(" ")
 
       val source = resolvedSource(node, page)
       val file = resolveFile("fiddle", source, page, variables)
@@ -715,14 +730,29 @@ case class DependencyDirective(ctx: Writer.Context) extends LeafBlockDirective("
   def renderDependency(tools: String, node: DirectiveNode, printer: Printer): Unit = {
     val classes = Seq("dependency", node.attributes.classesString).filter(_.nonEmpty)
 
-    val bomPostfixes = node.attributes.keys().asScala.toSeq
-      .filter(_.startsWith(BomVersionSymbols)).sorted.map(_.replace(BomVersionSymbols, ""))
+    val bomPostfixes = node.attributes
+      .keys()
+      .asScala
+      .toSeq
+      .filter(_.startsWith(BomVersionSymbols))
+      .sorted
+      .map(_.replace(BomVersionSymbols, ""))
 
-    val symbolPostfixes = node.attributes.keys().asScala.toSeq
-      .filter(_.startsWith(VersionSymbol)).sorted.map(_.replace(VersionSymbol, ""))
+    val symbolPostfixes = node.attributes
+      .keys()
+      .asScala
+      .toSeq
+      .filter(_.startsWith(VersionSymbol))
+      .sorted
+      .map(_.replace(VersionSymbol, ""))
 
-    val dependencyPostfixes = node.attributes.keys().asScala.toSeq
-      .filter(_.startsWith("group")).sorted.map(_.replace("group", ""))
+    val dependencyPostfixes = node.attributes
+      .keys()
+      .asScala
+      .toSeq
+      .filter(_.startsWith("group"))
+      .sorted
+      .map(_.replace("group", ""))
 
     val startDelimiter = node.attributes.value("start-delimiter", "$")
     val stopDelimiter = node.attributes.value("stop-delimiter", "$")
@@ -790,7 +820,14 @@ case class DependencyDirective(ctx: Writer.Context) extends LeafBlockDirective("
       }
     }
 
-    def gradle(group: String, artifact: String, rawArtifact: String, version: Option[String], scope: Option[String], classifier: Option[String]): String = {
+    def gradle(
+      group:       String,
+      artifact:    String,
+      rawArtifact: String,
+      version:     Option[String],
+      scope:       Option[String],
+      classifier:  Option[String]
+    ): String = {
       val artifactName = artifactNameWithScalaBin(artifact, rawArtifact, "${versions.ScalaBinary}")
       val conf = scope match {
         case None         => "implementation"
@@ -808,17 +845,31 @@ case class DependencyDirective(ctx: Writer.Context) extends LeafBlockDirective("
       s"""  implementation platform("$group:$artifactName:$ver")"""
     }
 
-    def mvn(group: String, artifact: String, rawArtifact: String, version: Option[String], `type`: Option[String], scope: Option[String], classifier: Option[String], indent: String): String = {
+    def mvn(
+      group:       String,
+      artifact:    String,
+      rawArtifact: String,
+      version:     Option[String],
+      `type`:      Option[String],
+      scope:       Option[String],
+      classifier:  Option[String],
+      indent:      String
+    ): String = {
       val artifactName = artifactNameWithScalaBin(artifact, rawArtifact, "${scala.binary.version}")
 
       val elements =
         Seq("groupId" -> group, "artifactId" -> artifactName) ++
-          version.map(v => "version" -> {
-            if (symbols.contains(v)) s"$${${dotted(v)}}" else v
-          }) ++ classifier.map("classifier" -> _) ++ `type`.map("type" -> _) ++ scope.map("scope" -> _)
-      elements.map {
-        case (element, value) => s"$indent  &lt;$element&gt;$value&lt;/$element&gt;"
-      }.mkString(s"$indent&lt;dependency&gt;\n", "\n", s"\n$indent&lt;/dependency&gt\n")
+          version.map(v =>
+            "version" -> {
+              if (symbols.contains(v)) s"$${${dotted(v)}}" else v
+            }
+          ) ++ classifier.map("classifier" -> _) ++ `type`.map("type" -> _) ++ scope.map("scope" -> _)
+      elements
+        .map {
+          case (element, value) =>
+            s"$indent  &lt;$element&gt;$value&lt;/$element&gt;"
+        }
+        .mkString(s"$indent&lt;dependency&gt;\n", "\n", s"\n$indent&lt;/dependency&gt\n")
     }
 
     val boms = bomPostfixes.map { p =>
@@ -863,23 +914,31 @@ case class DependencyDirective(ctx: Writer.Context) extends LeafBlockDirective("
           val scalaBinaryVersionProperties =
             if (showSymbolScalaBinary) ScalaBinaryVersion.map(v => s"""  ScalaBinary: "$v"""")
             else None
-          val symbolProperties = if (scalaBinaryVersionProperties.isEmpty && symbols.isEmpty) "" else
-            (symbolVersions
-              .filter(sp => !bomSymbols.contains(sp._1))
-              .map {
-                case (symbol, version) => s"""  $symbol: "$version""""
-              } ++ scalaBinaryVersionProperties).mkString("def versions = [\n", ",\n", "\n]\n")
+          val symbolProperties =
+            if (scalaBinaryVersionProperties.isEmpty && symbols.isEmpty) ""
+            else
+              (symbolVersions
+                .filter(sp => !bomSymbols.contains(sp._1))
+                .map {
+                  case (symbol, version) =>
+                    s"""  $symbol: "$version""""
+                } ++ scalaBinaryVersionProperties).mkString("def versions = [\n", ",\n", "\n]\n")
           val bomArtifacts =
             if (boms.nonEmpty) {
-              boms.map {
-                case (group, artifact, artifactRaw, versionSymbol) =>
-                  gradleBom(
-                    group,
-                    artifact,
-                    artifactRaw,
-                    version = symbolVersions.find(_._1 == versionSymbol.head).map(_._2).getOrElse(sys.error(s"No version found for ${versionSymbol.head}")),
-                  )
-              }.mkString("", "\n", "\n\n")
+              boms
+                .map {
+                  case (group, artifact, artifactRaw, versionSymbol) =>
+                    gradleBom(
+                      group,
+                      artifact,
+                      artifactRaw,
+                      version = symbolVersions
+                        .find(_._1 == versionSymbol.head)
+                        .map(_._2)
+                        .getOrElse(sys.error(s"No version found for ${versionSymbol.head}"))
+                    )
+                }
+                .mkString("", "\n", "\n\n")
             } else ""
           val artifacts = dependencyPostfixes.map { dp =>
             val versionCoordinate = requiredCoordinate(s"version$dp")
@@ -904,32 +963,40 @@ case class DependencyDirective(ctx: Writer.Context) extends LeafBlockDirective("
               s"""  &lt;scala.binary.version&gt;$v&lt;/scala.binary.version&gt;"""
             }
             else None
-          val symbolProperties = if (scalaBinaryVersionProperties.isEmpty && symbols.isEmpty) "" else
-            (symbolVersions
-              .filter(sp => !bomSymbols.contains(sp._1))
-              .map {
-                case (symbol, version) =>
-                  val symb = dotted(symbol)
-                  s"""  &lt;$symb&gt;$version&lt;/$symb&gt;"""
-              } ++ scalaBinaryVersionProperties)
-              .mkString("&lt;properties&gt;\n", "\n", "\n&lt;/properties&gt;\n")
+          val symbolProperties =
+            if (scalaBinaryVersionProperties.isEmpty && symbols.isEmpty) ""
+            else
+              (symbolVersions
+                .filter(sp => !bomSymbols.contains(sp._1))
+                .map {
+                  case (symbol, version) =>
+                    val symb = dotted(symbol)
+                    s"""  &lt;$symb&gt;$version&lt;/$symb&gt;"""
+                } ++ scalaBinaryVersionProperties)
+                .mkString("&lt;properties&gt;\n", "\n", "\n&lt;/properties&gt;\n")
           val bomArtifacts =
             if (boms.nonEmpty) {
-              boms.map {
-                case (group, artifact, artifactRaw, versionSymbol) =>
-                  val version = symbolVersions.find(_._1 == versionSymbol.head).map(_._2)
-                  if (version.isEmpty) sys.error(s"No version found for ${versionSymbol.head}")
-                  mvn(
-                    group,
-                    artifact,
-                    artifactRaw,
-                    version,
-                    `type` = Some("pom"),
-                    scope = Some("import"),
-                    classifier = None,
-                    indent = "    "
-                  )
-              }.mkString("&lt;dependencyManagement&gt;\n  &lt;dependencies&gt;\n", "", "  &lt;/dependencies&gt;\n&lt;/dependencyManagement&gt;\n")
+              boms
+                .map {
+                  case (group, artifact, artifactRaw, versionSymbol) =>
+                    val version = symbolVersions.find(_._1 == versionSymbol.head).map(_._2)
+                    if (version.isEmpty) sys.error(s"No version found for ${versionSymbol.head}")
+                    mvn(
+                      group,
+                      artifact,
+                      artifactRaw,
+                      version,
+                      `type` = Some("pom"),
+                      scope = Some("import"),
+                      classifier = None,
+                      indent = "    "
+                    )
+                }
+                .mkString(
+                  "&lt;dependencyManagement&gt;\n  &lt;dependencies&gt;\n",
+                  "",
+                  "  &lt;/dependencies&gt;\n&lt;/dependencyManagement&gt;\n"
+                )
             } else ""
           val artifacts = dependencyPostfixes.map { dp =>
             val versionCoordinate = requiredCoordinate(s"version$dp")
@@ -962,6 +1029,8 @@ case class DependencyDirective(ctx: Writer.Context) extends LeafBlockDirective("
 case class IncludeDirective(ctx: Writer.Context) extends LeafBlockDirective("include") with SourceDirective {
 
   override def render(node: DirectiveNode, visitor: Visitor, printer: Printer): Unit = {
-    throw new IllegalStateException("Include directive should have been handled in markdown preprocessing before render, but wasn't.")
+    throw new IllegalStateException(
+      "Include directive should have been handled in markdown preprocessing before render, but wasn't."
+    )
   }
 }
