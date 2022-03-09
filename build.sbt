@@ -18,9 +18,9 @@ import scala.collection.JavaConverters._
 import java.lang.management.ManagementFactory
 
 inThisBuild(List(
-  organization := "com.lightbend.paradox",
+  organization := "com.github.manish3323",
   licenses += "Apache-2.0" -> url("http://www.apache.org/licenses/LICENSE-2.0.html"),
-  organizationName := "lightbend",
+  organizationName := "manish3323",
   organizationHomepage := Some(url("https://lightbend.com/")),
   homepage := Some(url("https://developer.lightbend.com/docs/paradox/current/")),
   scmInfo := Some(ScmInfo(url("https://github.com/lightbend/paradox"), "git@github.com:lightbend/paradox.git")),
